@@ -3,13 +3,14 @@ import requests
 import time
 from ultralytics import YOLO
 
-# Model load ho raha hai
+# Model initialization
 model = YOLO('yolov8n.pt')
 
-# ⚠️ VERIFY YOUR IP ADDRESS
+# ⚠️ APNA IP ADDRESS YAHA UPDATE RAKHEIN
 PI_IP = "192.168.199.88"
 control_url = f"http://{PI_IP}:5000/control"
 stream_url = f"http://{PI_IP}:5000/video_feed"
+buzzer_url = f"http://{PI_IP}:5000/buzzer/lock"
 
 cap = cv2.VideoCapture(stream_url)
 
@@ -18,34 +19,32 @@ motor_start_time = 0
 motor_active = False
 current_direction = "stop"
 
-# --- 🎯 ULTRALIGHT PRECISION TUNING PARAMS ---
-forward_burst = 0.040       # Forward burst thoda chota kiya (Safe approach)
-turn_burst = 0.020          # 🔥 TURN BURST KO MAZEED KAM KIYA (0.020s) - Motors bilkul mamooli sa tick karengi
+# --- 🎯 THE PERFECTED UNI-HOTSPOT PARAMETERS ---
+forward_burst = 0.035  # Safe micro-forward approach
+turn_burst = 0.016  # 🔥 ULTRA-SHORT TICK (Inertia controls over-turning)
 burst_duration = 0.04
 
-normal_delay = 0.12         # Hotspot stabilization delay for straight movement
-turn_delay = 0.45           # 🔥 EXTENDED SHANTI BREAK (450ms) - Turn lene ke baad robot aadha second rukay ga taake hotspot ka delayed frame laptop tak pohanch jaye!
-stability_delay = 0.12
-
-# Target lock setup
+# Master Lock Configurations
 target_locked = False
 lock_start_time = None
 lock_duration = 3.0
 locked_box_center = None
 
 
-def send_command_instant(direction):
+def send_command_instant(url_route):
     try:
-        requests.get(f"{control_url}/{direction}", timeout=0.01)
+        # Strict timeout to never freeze the processing script
+        requests.get(url_route, timeout=0.01)
     except:
         pass
 
 
-print("👑 THE HIGH-PRECISION CALM TRACKER IS LIVE... Stand center to lock.")
+print("⚡ UNI-HOTSPOT BULLETPROOF ENGINE ACTIVE... Stand centered to lock.")
 
 while True:
-    # Buffer flush to keep the stream 100% real-time
-    for _ in range(4):
+    # 🔥 CORE NETWORK FIX: Force-clear OpenCV's network queue cache completely
+    # Takes only the freshest frame directly from the network pipeline
+    for _ in range(5):
         cap.grab()
     ret, frame = cap.retrieve()
 
@@ -53,32 +52,40 @@ while True:
         print("Camera Stream Error.")
         break
 
+    # Real-time resolution compression down to optimize inference speed over hotspot
+    frame = cv2.resize(frame, (320, 240))
+
     h, w, c = frame.shape
     screen_center = w // 2
     current_time = time.time()
 
     # 1. Non-Blocking Physical Burst Handler
     if motor_active and (current_time - motor_start_time >= burst_duration):
-        send_command_instant("stop")
-        motor_active = False
+        send_command_instant(f"{control_url}/stop")
 
-        # 🔥 Dynamic Sleep: Agar turn liya tha toh lamba break (turn_delay), agar straight tha toh normal break
+        # 🔥 THE NETWORK LAG FLUSHER:
         if current_direction in ["left", "right"]:
-            time.sleep(turn_delay)
+            print("⏳ Damping inertia... Flushing hotspot delay frames.")
+            time.sleep(0.55)  # Shanti break for turns to absorb floor momentum
+            for _ in range(20):  # Dump all bottlenecked past movement frames
+                cap.grab()
         else:
-            time.sleep(normal_delay)
+            time.sleep(0.18)  # Break for straight lines
+            for _ in range(10):
+                cap.grab()
 
+        motor_active = False
         current_direction = "stop"
 
-    # 2. Dynamic Precision Vision Engine
+    # 2. Precision Vision Processing Engine
     if not motor_active:
-        current_conf = 0.65 if not target_locked else 0.45
+        current_conf = 0.65 if not target_locked else 0.40
         results = model(frame, classes=[0], conf=current_conf, verbose=False)
         boxes = results[0].boxes.xyxy.cpu().numpy() if (results[0].boxes and results[0].boxes.xyxy is not None) else []
 
-        # PHASE 1: TARGET COUNTDOWN LOCK
+        # --- PHASE 1: TARGET COUNTDOWN LOCK ---
         if not target_locked:
-            send_command_instant("stop")
+            send_command_instant(f"{control_url}/stop")
             if len(boxes) > 0:
                 if lock_start_time is None:
                     lock_start_time = time.time()
@@ -88,19 +95,22 @@ while True:
 
                 box = boxes[0]
                 cv2.rectangle(frame, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), (0, 165, 255), 2)
-                cv2.putText(frame, f"LOCKING MASTER: {remaining}s", (10, 30),
+                cv2.putText(frame, f"LOCKING IN: {remaining}s", (10, 30),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
 
                 if elapsed_time >= lock_duration:
                     target_locked = True
                     locked_box_center = int((box[0] + box[2]) / 2)
-                    print("🎯 MASTER LOCK SECURED.")
+                    print("🎯 MASTER SECURED. Triggering Pi Buzzer...")
+
+                    # 🔥 TRIGGER PI BUZZER TUNE ON SUCCESSFUL LOCK
+                    send_command_instant(buzzer_url)
             else:
                 lock_start_time = None
                 cv2.putText(frame, "SEARCHING FOR MASTER...", (10, 30),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
 
-        # PHASE 2: MASTER TRACKING MODE
+        # --- PHASE 2: MASTER LOCKED TRACKING MODE ---
         else:
             best_box = None
             min_dist = float('inf')
@@ -115,71 +125,68 @@ while True:
             if best_box is not None:
                 locked_box_center = int((best_box[0] + best_box[2]) / 2)
                 box_height = best_box[3] - best_box[1]
+                # WIDER DEADZONE TO FILTER OUT NETWORK PING LATENCY FLICKERS
                 offset = locked_box_center - screen_center
 
-                # Visual Feedback
                 cv2.rectangle(frame, (int(best_box[0]), int(best_box[1])), (int(best_box[2]), int(best_box[3])),
                               (0, 255, 0), 2)
-                cv2.putText(frame, f"👑 ACTIVE TRACKING | OFFSET: {offset}", (10, 30),
+                cv2.putText(frame, f"🔓 MASTER ACTIVE | OFFSET: {offset}", (10, 30),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
-                # --- 🧠 THE DYNAMIC PRECISION MATRIX (Deadzone = 85) ---
-
-                # PRIORITY 1: INSTANT CONTROLLED ALIGNMENT
-                if offset < -85:
-                    print("▶️ PRECISION TURN: Right Micro-Tick")
-                    burst_duration = turn_burst  # 0.025s limits the turn amplitude
-                    send_command_instant("right")
+                # --- THE DYNAMIC MOVEMENT DECISION TREE (Deadzone = 95) ---
+                if offset < -95:
+                    print("▶️ HOTSPOT TURN: Right Micro-Tick")
+                    burst_duration = turn_burst
+                    send_command_instant(f"{control_url}/right")
                     motor_start_time = time.time()
                     motor_active = True
                     current_direction = "right"
 
-                elif offset > 85:
-                    print("◀️ PRECISION TURN: Left Micro-Tick")
-                    burst_duration = turn_burst  # 0.025s limits the turn amplitude
-                    send_command_instant("left")
+                elif offset > 95:
+                    print("◀️ HOTSPOT TURN: Left Micro-Tick")
+                    burst_duration = turn_burst
+                    send_command_instant(f"{control_url}/left")
                     motor_start_time = time.time()
                     motor_active = True
                     current_direction = "left"
 
-                # PRIORITY 2: DISTANCE ADJUSTMENT (Only triggers if alignment is verified inside deadzone)
                 else:
-                    if box_height > 350:
+                    if box_height > 160:  # Scaled for 320x240 frame format
                         print("⚠️ Guard Active -> Safe Step Backward")
-                        burst_duration = 0.06
-                        send_command_instant("backward")
+                        burst_duration = 0.05
+                        send_command_instant(f"{control_url}/backward")
                         motor_start_time = time.time()
                         motor_active = True
                         current_direction = "backward"
 
-                    elif box_height < 270:
-                        print("🚶‍♂️ Pursuit Active -> Precise Step Forward")
-                        burst_duration = forward_burst  # 0.045s for smooth forward approach
-                        send_command_instant("forward")
+                    elif box_height < 110:  # Scaled for 320x240 frame format
+                        print("🚶‍♂️ Pursuit Active -> Step Forward")
+                        burst_duration = forward_burst
+                        send_command_instant(f"{control_url}/forward")
                         motor_start_time = time.time()
                         motor_active = True
                         current_direction = "forward"
 
                     else:
                         if current_direction != "stop":
-                            send_command_instant("stop")
+                            send_command_instant(f"{control_url}/stop")
                             current_direction = "stop"
             else:
-                cv2.putText(frame, "⚠️ MASTER OUT OF SIGHT. Press 'R' to Relock", (10, 30),
+                cv2.putText(frame, "⚠️ TARGET LOST! Standing Still.", (10, 30),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
                 if current_direction != "stop":
-                    send_command_instant("stop")
+                    send_command_instant(f"{control_url}/stop")
                     current_direction = "stop"
 
-    cv2.imshow("King Perfect Precision Follower", frame)
+    cv2.imshow("King Uni-Hotspot Fail-Safe Follower", frame)
 
     key = cv2.waitKey(1) & 0xFF
     if key == ord('r'):
         target_locked = False
         lock_start_time = None
-        print("🔄 System manual relock...")
+        print("🔄 Manual lock reset triggered...")
     elif key == ord('q'):
-        send_command_instant("stop")
+        send_command_instant(f"{control_url}/stop")
         break
 
 cap.release()
