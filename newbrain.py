@@ -7,7 +7,7 @@ from ultralytics import YOLO
 model = YOLO('yolov8n.pt')
 
 # ⚠️ APNA IP ADDRESS YAHA UPDATE RAKHEIN
-PI_IP = "192.168.199.88"
+PI_IP = "172.20.10.6"
 control_url = f"http://{PI_IP}:5000/control"
 stream_url = f"http://{PI_IP}:5000/video_feed"
 buzzer_url = f"http://{PI_IP}:5000/buzzer/lock"
